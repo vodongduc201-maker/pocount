@@ -46,7 +46,7 @@ with st.expander("📄 Xem trước dữ liệu"):
 # ---------- Chọn cột ----------
 st.subheader("⚙️ Chọn cột dữ liệu")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 def guess_col(keywords, cols):
     for c in cols:
@@ -67,10 +67,17 @@ with col2:
         all_cols,
         index=all_cols.index(guess_col(["ngày", "ngay"], all_cols)),
     )
+with col3:
+    col_mst = st.selectbox(
+        "Cột Mã số thuế",
+        all_cols,
+        index=all_cols.index(guess_col(["mã số thuế", "mst"], all_cols)),
+    )
 
 # ---------- Xử lý ----------
 work = data.copy()
 work["_MAKH_"] = work[col_makh].astype(str).str.strip()
+work["_MST_"] = work[col_mst].astype(str).str.strip()
 
 # Parse ngày - hỗ trợ cả 2 dạng: text ("01/08/26") và serial number Excel (46235)
 raw_ngay = work[col_ngay]
@@ -111,16 +118,19 @@ valid = work.dropna(subset=["_NGAY_"]) if True else work
 # Mỗi nhóm (Mã KH + Ngày/Tháng) = 1 PO, dù có bao nhiêu dòng hóa đơn bên trong
 summary = (
     valid.groupby(group_cols)
-    .size()
-    .reset_index(name="So_hoa_don")  # số dòng hóa đơn thuộc PO này
+    .agg(So_hoa_don=("_MAKH_", "size"), MST=("_MST_", "first"))
+    .reset_index()
     .rename(columns={"_MAKH_": "Ma_KH", group_cols[-1]: time_label})
 )
 summary["So_luong_PO"] = 1  # mỗi nhóm luôn tính là 1 PO
+# Sắp cột: Ma_KH, MST, thời gian, số hóa đơn, số PO
+cols_order = ["Ma_KH", "MST", time_label, "So_hoa_don", "So_luong_PO"]
+summary = summary[[c for c in cols_order if c in summary.columns]]
 summary = summary.sort_values("So_hoa_don", ascending=False).reset_index(drop=True)
 
 # Tổng theo Mã KH: đếm SỐ NHÓM (= số PO thật sự), không cộng dồn số dòng hóa đơn
 tong_theo_makh = (
-    summary.groupby("Ma_KH")
+    summary.groupby(["Ma_KH", "MST"])
     .agg(
         Tong_So_PO=("So_luong_PO", "sum"),      # số PO thật (đã loại trùng hóa đơn)
         Tong_So_Hoa_Don=("So_hoa_don", "sum"),  # tổng số dòng hóa đơn gốc
