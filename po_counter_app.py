@@ -3,12 +3,13 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime
 
-st.set_page_config(page_title="Đếm PO theo MST", layout="wide")
-st.title("📊 Đếm PO theo MST + Mã khách hàng")
+st.set_page_config(page_title="Đếm PO theo Mã khách hàng", layout="wide")
+st.title("📊 Đếm PO theo Mã khách hàng")
 
 st.markdown(
-    "Upload file Excel export (có các cột như: Số phiếu, Ngày, Mã KH, Tên KH, "
-    "MST, ...). App sẽ đếm số PO theo tổ hợp **MST + Mã khách hàng + Ngày/Tháng**."
+    "Upload file Excel export (có các cột: Ngày, Mã KH, Tên KH, Mã số thuế...). "
+    "App sẽ đếm số PO theo tổ hợp **Mã khách hàng + Ngày/Tháng**. "
+    "Nếu 1 Mã KH trong cùng ngày xuất nhiều hóa đơn, vẫn tính là **1 PO**."
 )
 
 uploaded_files = st.file_uploader(
@@ -56,9 +57,9 @@ def guess_col(keywords, cols):
 
 with col1:
     col_makh = st.selectbox(
-        "Cột Mã khách hàng / cửa hàng",
+        "Cột Mã khách hàng",
         all_cols,
-        index=all_cols.index(guess_col(["mã"], all_cols)),
+        index=all_cols.index(guess_col(["mã kh", "makh", "ma kh"], all_cols)),
     )
 with col2:
     col_ngay = st.selectbox(
@@ -67,18 +68,22 @@ with col2:
         index=all_cols.index(guess_col(["ngày", "ngay"], all_cols)),
     )
 
-col_sophieu = st.selectbox(
-    "Cột Số phiếu (không bắt buộc, chỉ để tham chiếu)",
-    ["(không dùng)"] + all_cols,
-    index=0,
-)
-
 # ---------- Xử lý ----------
 work = data.copy()
 work["_MAKH_"] = work[col_makh].astype(str).str.strip()
 
-# Parse ngày
-work["_NGAY_"] = pd.to_datetime(work[col_ngay], dayfirst=True, errors="coerce")
+# Parse ngày - hỗ trợ cả 2 dạng: text ("01/08/26") và serial number Excel (46235)
+raw_ngay = work[col_ngay]
+if pd.api.types.is_numeric_dtype(raw_ngay):
+    # Ngày lưu dạng số serial của Excel (VD: 46235)
+    work["_NGAY_"] = pd.to_datetime(raw_ngay, unit="D", origin="1899-12-30", errors="coerce")
+else:
+    work["_NGAY_"] = pd.to_datetime(raw_ngay, dayfirst=True, errors="coerce")
+    # Nếu vẫn lỗi nhiều, thử lại coi có phải chuỗi số serial không
+    if work["_NGAY_"].isna().mean() > 0.5:
+        as_num = pd.to_numeric(raw_ngay, errors="coerce")
+        work["_NGAY_"] = pd.to_datetime(as_num, unit="D", origin="1899-12-30", errors="coerce")
+
 work["_THANG_"] = work["_NGAY_"].dt.to_period("M").astype(str)
 work["_NGAY_STR_"] = work["_NGAY_"].dt.strftime("%d/%m/%Y")
 
